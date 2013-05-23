@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Add a Photo with Tim</title>
+    <link rel="stylesheet" href="http://code.jquery.com/mobile/1.3.1/jquery.mobile-1.3.1.min.css" />
+    <script src="http://code.jquery.com/jquery-1.9.1.min.js"></script>
+    <script src="http://code.jquery.com/mobile/1.3.1/jquery.mobile-1.3.1.min.js"></script> 
+    <script src="lib/jqm.auto-complete-1.5.1-min.js"></script> 
+
+    <script>
+      var config = {
+        niceNames: {
+          lat:            'Latitude'
+        , lon:            'Longitude'
+        , phone:          'Phone Number'
+        , city:           'City'
+        , zip:            'Zip'
+        , name:           'Name'
+        , street1:        'Street 1'
+        , street2:        'Street 2'
+        , description:    'Description'
+        , categories:     'Categories'
+        , tags:           'Tags'
+        , photoUrl:       'Photo'
+        , price:          'Price'
+        , order:          'Order'
+        }
+
+      , apiUrl: 'http://magic.goodybag.com/v1'
+      };
+
+      var utils = (function(exports){
+        var utils = {};
+
+        utils.compileTemplates = function(obj){
+          var compiled = {};
+          for (var key in obj){
+            if (typeof obj[key] !== "string"){
+              compiled[key] = utils.compileTemplates(obj[key]);
+            }else {
+              // Create a function to be called (like other templating systems) for each template item
+              compiled[key] = function(obj){
+                var newHtml = this.html;
+                for (var key in obj){
+                  newHtml = newHtml.replace(RegExp('{{' + key + '}}', 'g'), obj[key]);
+                }
+                return newHtml;
+              }.bind({html: document.getElementById(obj[key]).innerHTML.trim()});
+            }
+          }
+          return compiled;
+        };
+
+        utils.pickFile = function(options, callback){
+          if (typeof options == 'function'){
+            callback = options;
+            options = null;
+          }
+
+          options = options || { mimetypes:['image/*'] };
+
+          filepicker.pick(
+            options
+          , function(file){  if (callback) callback(null, file); }
+          , function(error){ if (callback) callback(error); }
+          );
+        };
+
+
+        utils.ajax = function(method, url, data, callback){
+          switch (method){
+            case "get":     method = "GET";     break;
+            case "post":    method = "POST";    break;
+            case "del":     method = "DELETE";  break;
+            case "put":     method = "PUT";     break;
+            case "patch":   method = "PUT";     break;
+          }
+
+          if (typeof data === "function"){
+            callback = data;
+            data = null;
+          }
+
+          if (method === "GET" || method === "get"){
+            url += utils.queryParams(data);
+            data = null;
+          }
+
+          var ajax = {
+            type: method
+          , method: method
+          , url: url
+          , xhrFields: { withCredentials: true }
+          , crossDomain: true
+          , success: function(results){
+              if (typeof results == 'string' && results) results = JSON.parse(results);
+              results = results || {};
+              callback && callback(results.error, results.data, results.meta);
+            }
+          , error: function(error, results, res, r){
+              callback && callback(error.responseText ? JSON.parse(error.responseText).error : error);
+            }
+          };
+
+
+          if (data) ajax.data = data;
+          
+          $.ajax(ajax);
+        };
+
+        utils.get = function(url, params, callback){
+          utils.ajax('get', url, params, callback);
+          return utils;
+        };
+
+        utils.post = function(url, data, callback){
+          utils.ajax('post', url, data, callback);
+          return utils;
+        };
+
+        utils.put = function(url, data, callback){
+          utils.ajax('put', url, data, callback);
+          return utils;
+        };
+
+         utils.patch = function(url, data, callback){
+          utils.ajax('patch', url, data, callback);
+          return utils;
+        };
+
+        utils.del = function(url, data, callback){
+          utils.ajax('delete', url, data, callback);
+          return utils;
+        };
+
+        utils.queryParams = function(data){
+          if (typeof data !== "object") return "";
+          var params = "?";
+          for (var key in data){
+            params += key + "=" + data[key] + "&";
+          }
+          return params.substring(0, params.length - 1);
+        };
+
+        utils.noop = function(){};
+
+        utils.api = {};
+
+        utils.api.get = function(url, data, callback){
+          utils.ajax('get', config.apiUrl + url, data, callback);
+        };
+
+        utils.api.post = function(url, data, callback){
+          utils.ajax('post', config.apiUrl + url, data, callback);
+        };
+
+        utils.api.patch = function(url, data, callback){
+          utils.ajax('patch', config.apiUrl + url, data, callback);
+        };
+
+        utils.api.update = function(url, data, callback){
+          utils.ajax('patch', config.apiUrl + url, data, callback);
+        };
+
+        utils.api.del = function(url, data, callback){
+          utils.ajax('del', config.apiUrl + url, data, callback);
+        };
+
+        return utils;
+      })(this);
+
+      var api = {};
+
+      api.products = {
+        list: function(query, callback){
+          utils.api.get('/products', query, callback);
+        }
+
+      , get: function(id, callback){
+          utils.api.get('/products/' + id, callback);
+        }
+
+      , create: function(data, callback){
+          utils.api.post('/products', data, callback);
+        }
+
+      , update: function(id, data, callback){
+          utils.api.update('/products/' + id, data, callback);
+        }
+
+      , feelings: function(id, feelings, callback){
+          utils.api.post('/products/' + id + '/feelings', feelings, callback);
+        }
+
+      , categories: {
+          list: function(pid, query, callback){
+            utils.api.get('/products/' + pid + '/categories', query, callback);
+          }
+
+        , get: function(pid, id, callback){
+            utils.api.get('/products/' + pid + '/categories/' + id, callback);
+          }
+
+        , create: function(pid, data, callback){
+            utils.api.post('/products/' + pid + '/categories', data, callback);
+          }
+
+        , update: function(pid, id, data, callback){
+            utils.api.update('/products/' + pid + '/categories/' + id, data, callback);
+          }
+        }
+      };
+
+      api.session = {
+        get: function(callback){
+          utils.api.get('/session', callback);
+        }
+
+      , auth: function(email, password, callback){
+          var data = { email: email, password: password };
+          utils.api.post('/session', data, callback);
+        }
+
+      , oauth: function(code, callback){
+          var data = { code: code, group: 'consumer' };
+          utils.api.post('/oauth', data, callback);
+        }
+
+      , getOauthUrl: function(url, service, callback){
+          var data = { redirect_uri: url, service: service };
+          utils.api.get('/oauth', data, callback);
+        }
+
+      , destroy: function(callback){
+          utils.api.del('/session', callback);
+        }
+      };
+
+      var templates = (function(){
+        var templates = {};
+
+        templates.productListItem = 'product-list-item';
+
+        return templates;
+      })();
+
+      var Product = function(data){
+        this.data = data;
+        this.template = templates.productListItem;
+        this.$el = $(this.template(this.data));
+
+        var this_ = this;
+        this.$el.on('click', function(e){
+          this_.onClick(e);
+        });
+      };
+
+      Product.prototype.onClick = function(e){
+        var this_ = this;
+
+        utils.pickFile(function(error, file){
+          if (error) return app.error(error);
+
+          api.products.update(this_.data.id, { photoUrl: file.url }, function(error){
+            if (error) return app.error(error);
+
+            alert('Product added! Good jerb!');
+          });
+        });
+      };
+
+      var app = {};
+
+      app.error = function(error, $el, action){
+        // No XHR errors - they probably just canceled the request
+        // if (error.hasOwnProperty('status') && error.status == 0) return;
+
+        if (typeof $el == 'function'){
+          action = $el;
+          $el = null;
+        }
+
+        if (!action) action = alert;
+
+        if (error){
+          var msg, detailsAdded = false;
+
+          if (typeof error == "object")
+            msg = error.message || (window.JSON ? window.JSON.stringify(error) : error);
+          else
+            msg = error;
+
+          if (error.details){
+            msg += "\n";
+            if (typeof error.details == 'string')
+              msg += error.details
+            else {
+              for (var key in error.details){
+                if ($el) $el.find('.field-' + key).addClass('error');
+                if (error.details[key]){
+                  msg += "\n" + app.getKeyNiceName(key) + ": " + error.details[key] + ", ";
+                  detailsAdded = true;
+                }
+              }
+              if (detailsAdded) msg = msg.substring(0, msg.length -2);
+            }
+          }
+
+          action(msg, error);
+
+          return msg; 
+        }
+      };
+
+      app.domready = function(){
+        var
+          $products = $('#products-list-view')
+        , $search   = $('#products input[data-type="search"]')
+        ;
+
+        templates = utils.compileTemplates(templates);
+
+        /**
+         * Before the product listview filters, reset it
+         */
+        $products.on('listviewbeforefilter', function(e){
+          var $target = $(e.target);
+
+          if ($search.val() == "") return $target.html("");
+
+          api.products.list({ filter: $search.val(), hasPhoto: false }, function(error, products){
+            if (error) return app.error(error);
+
+            app.products = products;
+
+
+            $target.html('');
+            for (var i = 0, l = products.length; i < l; ++i){
+              $target.append(new Product(products[i]).$el);
+            }
+
+            $products.listview('refresh');
+          });
+        });
+      };
+    </script>
+
+    <script type="text/javascript">
+      (function(a){if(window.filepicker){return}var b=a.createElement("script");b.type="text/javascript";b.async=!0;b.src=("https:"===a.location.protocol?"https:":"http:")+"//api.filepicker.io/v1/filepicker.js";var c=a.getElementsByTagName("script")[0];c.parentNode.insertBefore(b,c);var d={};d._queue=[];var e="pick,pickMultiple,pickAndStore,read,write,writeUrl,export,convert,store,storeUrl,remove,stat,setKey,constructWidget,makeDropPane".split(",");var f=function(a,b){return function(){b.push([a,arguments])}};for(var g=0;g<e.length;g++){d[e[g]]=f(e[g],d._queue)}window.filepicker=d})(document);
+    </script>
+    <script type="text/javascript">filepicker.setKey('AF52P8LtHSd6VMD07XdOQz');</script>
+  </head>
+  <body>
+    <script id="product-list-item" type="text/template">
+      <li data-id="{{id}}">
+        <h1>{{name}}</h1>
+        <p>{{businessName}}</p>
+      </li>
+    </script>
+
+    <div data-role="page" class="product-search" id="products">
+      <header data-role="header">
+        <h1>Add a Photo with Tim</h1>
+      </header>
+      <div data-role="content">
+        <ul data-role="listview" data-filter="true" id="products-list-view"></ul>
+      </div>
+      <footer data-role="footer" data-position="fixed">
+        <nav data-role="navbar">
+          <ul>
+            <li><a href="Products" data-icon="grid">Products</a></li>
+            <li><a href="Statistics" data-icon="star">Statistics</a></li>
+          </ul>
+        </nav>
+      </footer>
+    </div>
+
+    <script>
+      $(app.domready);
+    </script>
+  </body>
+</html>

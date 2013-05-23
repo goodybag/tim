@@ -11,7 +11,15 @@
 
     <script>
       var config = {
-        niceNames: {
+        defaults: {
+          // Around Guadalup and E MLK blvd
+          position: {
+            lat: 30.2818
+          , lon: -97.7421
+          }
+        }
+
+      , niceNames: {
           lat:            'Latitude'
         , lon:            'Longitude'
         , phone:          'Phone Number'
@@ -33,6 +41,36 @@
 
       var utils = (function(exports){
         var utils = {};
+
+        utils.geo = {
+          isSupported: function(){
+            return "geolocation" in navigator;
+          }
+
+        , getPosition: function(callback){
+            if (!utils.geo.isSupported())
+              return callback ? callback(new Error('Geo Location not supported')) : null;
+
+            var onSuccess = function(position){
+              if (callback) return callback(null, {
+                lat: position.coords.latitude
+              , lon: position.coords.longitude
+              }, position);
+            };
+
+            var onError = callback;
+
+            navigator.geolocation.getCurrentPosition(onSuccess, onError);
+          }
+        };
+
+        if (!utils.geo.isSupported()){
+          // Override for browsers that do not support and give
+          // default location
+          utils.geo.getPosition = function(callback){
+            if (callback) return callback(null, config.defaults.location);
+          };
+        };
 
         utils.compileTemplates = function(obj){
           var compiled = {};
@@ -252,7 +290,7 @@
         this.$el = $(this.template(this.data));
 
         var this_ = this;
-        this.$el.on('click', function(e){
+        this.$el.on('tap', function(e){
           this_.onClick(e);
         });
       };
@@ -271,7 +309,12 @@
         });
       };
 
-      var app = {};
+      var user = { loggedIn: false };
+
+      var app = {
+        lat: config.defaults.lat
+      , lon: config.defaults.lon
+      };
 
       app.error = function(error, $el, action){
         // No XHR errors - they probably just canceled the request
@@ -300,7 +343,7 @@
               for (var key in error.details){
                 if ($el) $el.find('.field-' + key).addClass('error');
                 if (error.details[key]){
-                  msg += "\n" + app.getKeyNiceName(key) + ": " + error.details[key] + ", ";
+                  msg += "\n" + config.niceName[key] + ": " + error.details[key] + ", ";
                   detailsAdded = true;
                 }
               }
@@ -314,13 +357,58 @@
         }
       };
 
+      app.spinner = {
+        spin: function(){
+          $.mobile.loading( 'show', {
+            text: '',
+            textVisible: true,
+            theme: 'z',
+            html: ""
+          });
+        }
+
+      , stop: function(){ $.mobile.loading('hide'); }
+      };
+
+      app.changePage = function(page, options){
+        if (page.indexOf('.') == -1) page = '#' + page;
+        console.log('change page', page);
+        $.mobile.changePage(page, options);
+      };
+
+      app.onUserLogin = function(){
+        user.loggedIn = true;
+        console.log("ON USER LOGIN");
+        setTimeout(function(){ app.changePage('products-page'); }, 200);
+      };
+
       app.domready = function(){
-        var
-          $products = $('#products-list-view')
-        , $search   = $('#products input[data-type="search"]')
-        ;
+        if (!user.loggedIn) app.changePage('login-page');
+        else app.changePage('products-page');
 
         templates = utils.compileTemplates(templates);
+
+        app.spinner.spin();
+
+        api.session.get(function(error, result){
+          app.spinner.stop();
+
+          if (error) return app.error(error);
+
+          if (!result) return app.changePage('login-page');
+
+          user = result;
+          
+          app.onUserLogin();
+        });
+      };
+
+      app.productsPageInit = function(e){
+        console.log("products page init");
+        var
+          $products = $('#products-list-view')
+        , $search   = $('#products-page input[data-type="search"]')
+        ;
 
         /**
          * Before the product listview filters, reset it
@@ -330,11 +418,18 @@
 
           if ($search.val() == "") return $target.html("");
 
-          api.products.list({ filter: $search.val(), hasPhoto: false }, function(error, products){
+          var options = {
+            filter:   $search.val()
+          , hasPhoto: false
+          , lat:      app.lat
+          , lon:      app.lon
+          // , sort:     '-distance'
+          };
+
+          api.products.list(options, function(error, products){
             if (error) return app.error(error);
 
             app.products = products;
-
 
             $target.html('');
             for (var i = 0, l = products.length; i < l; ++i){
@@ -343,6 +438,46 @@
 
             $products.listview('refresh');
           });
+        });
+      };
+
+      app.loginPageInit = function(e){
+        console.log('Login page init');
+
+        var $login = $('#login-form');
+
+        /**
+         * Catch Logins
+         */
+        $login.on('submit', function(e){
+          app.spinner.spin();
+          e.preventDefault();
+          var $user = $('#username');
+          var $password = $('#password');
+
+          api.session.auth($user.val(), $password.val(), function(error, result){
+            app.spinner.stop();
+            if (error) return app.error(error);
+
+            user = result;
+
+            app.onUserLogin();
+          });
+
+          $password.val("");
+        });
+      };
+
+      app.init = function(){
+        $('#products-page').on('pageinit', app.productsPageInit);
+        $('#login-page').on('pageinit', app.loginPageInit);
+
+        $(app.domready)
+
+        utils.geo.getPosition(function(error, position){
+          if (error) return;
+          app.lat = position.lat;
+          app.lon = position.lon;
         });
       };
     </script>
@@ -359,8 +494,19 @@
         <p>{{businessName}}</p>
       </li>
     </script>
+    
 
-    <div data-role="page" class="product-search" id="products">
+    <div data-role="page" class="page page-welcome" id="welcome-page">
+      <header data-role="header">
+        <h1>Add a Photo with Tim</h1>
+      </header>
+      <div data-role="content">
+        <h1>Welcome to Tim</h1>
+        <h2>Please wait a second</h2>
+      </div>
+    </div>
+
+    <div data-role="page" class="page page-products" id="products-page">
       <header data-role="header">
         <h1>Add a Photo with Tim</h1>
       </header>
@@ -370,15 +516,31 @@
       <footer data-role="footer" data-position="fixed">
         <nav data-role="navbar">
           <ul>
-            <li><a href="Products" data-icon="grid">Products</a></li>
-            <li><a href="Statistics" data-icon="star">Statistics</a></li>
+            <li><a href="#products-page" data-icon="grid">Products</a></li>
+            <li><a href="#statistcs-page" data-icon="star">Statistics</a></li>
           </ul>
         </nav>
       </footer>
     </div>
+    
+    <div data-role="page" class="page page-login" id="login-page">
+      <div data-role="content">
+        <form id="login-form" action="http://magic.goodybg.com/v1/session" method="post">
+          <div data-role="fieldcontain">
+            <label for="username">Username:</label>
+            <input type="text" name="username" id="username" value="" placeholder="Username"/>
+          </div>
+          <div data-role="fieldcontain">
+            <label for="password">Password:</label>
+            <input type="password" name="password" id="password" value="" placeholder="Password"/>
+          </div>
+          <button type="submit" data-theme="a" class="ui-btn-hidden" aria-disabled="false">Submit</button>
+        </form>
+      </div>
+    </div>
 
     <script>
-      $(app.domready);
+      app.init();
     </script>
   </body>
 </html>

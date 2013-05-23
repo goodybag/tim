@@ -1,0 +1,6 @@
+ server {
+  server_name tim.j0.hn;
+  listen 80;
+  root /apps/tim/;
+  index index.html index.htm;
+}
